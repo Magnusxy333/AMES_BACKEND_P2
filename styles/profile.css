@@ -1,0 +1,125 @@
+:root {
+  --ames-blue-dark: #0F317B;
+  --ames-blue: #0E8ACD;
+  --ames-blue-light: #0E9ACD;
+  --ames-cyan: #0EC5E1;
+  --ames-input: rgb(189, 233, 245);
+  --ames-white: #FFFFFF;
+  --ames-text: #17213A;
+  --ames-text-light: #63708A;
+  --ames-border: #101828;
+  --ames-success: #138A63;
+  --ames-success-light: #DDF7EC;
+  --ames-warning: #E28A16;
+  --ames-warning-light: #FFF3D9;
+  --ames-danger: #C83D4D;
+  --ames-danger-light: #FFE7EA;
+  --ames-shadow: 0 16px 45px rgba(15, 49, 123, 0.18);
+}
+
+@font-face {
+  font-family: "Genova";
+  src: url("Genova.otf");
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  height: 1000px;
+  margin: 0;
+  color: var(--ames-text);
+  background-color: var(--ames-blue-dark);
+  background:
+    linear-gradient(
+      135deg,
+      var(--ames-blue-dark) 0%,
+      var(--ames-blue-light) 52%,
+      var(--ames-cyan) 100%
+    );
+  background-attachment: fixed;
+  font-family: "Segoe UI", Arial, sans-serif;
+}
+
+/* Estilo dos Cartões */
+.card {
+    border-radius: 15px;
+}
+
+/* Foto de Perfil Customizada */
+.profile-img-container {
+    position: relative;
+    width: 150px;
+    height: 150px;
+}
+
+.profile-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border: 4px solid #0EC5E1; /* Borda usando o azul claro do seu projeto */
+    padding: 3px;
+}
+
+/* Botão de alterar foto flutuante */
+.change-photo-btn {
+    position: absolute;
+    bottom: 5px;
+    right: 5px;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    color: #0F317B;
+}
+
+.change-photo-btn:hover {
+    background-color: #0EC5E1;
+    color: white;
+}
+
+/* Botões do Formulário */
+.btn-primary {
+    background-color: #0F317B;
+    border-color: #0F317B;
+}
+
+.btn-primary:hover {
+    background-color: #0a2256;
+    border-color: #0a2256;
+}
+
+.btn-outline-primary {
+    color: #0F317B;
+    border-color: #0F317B;
+}
+
+.btn-outline-primary:hover {
+    background-color: #0F317B;
+    color: white;
+}
+
+/* Inputs do formulário */
+.form-control:focus {
+    border-color: #0EC5E1;
+    box-shadow: 0 0 0 0.25rem rgba(14, 197, 225, 0.25);
+}
+
+/* Ocultando texto em telas muito pequenas (opcional, mas bom para navbar com muito ícone) */
+@media (max-width: 576px) {
+    .nav-link {
+        font-size: 0.8rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+    .nav-link i {
+        margin-right: 0 !important;
+        margin-bottom: 3px;
+    }
+}
