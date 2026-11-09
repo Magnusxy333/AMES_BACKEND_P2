@@ -842,3 +842,32 @@ body {
     width: 100%;
   }
 }
+
+
+.form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.clear-activity-btn {
+    padding: 12px 20px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    background-color: #fff;
+    color: #555;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.clear-activity-btn:hover {
+    background-color: #f3f4f6;
+}
+
+.form-message.sucesso {
+    color: #15803d;
+}
+
+.form-message.erro {
+    color: #dc2626;
+}
