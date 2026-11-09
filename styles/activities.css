@@ -842,3 +842,91 @@ body {
     width: 100%;
   }
 }
+
+
+.form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.clear-activity-btn {
+    padding: 12px 20px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    background-color: #fff;
+    color: #555;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.clear-activity-btn:hover {
+    background-color: #f3f4f6;
+}
+
+.form-message.sucesso {
+    color: #15803d;
+}
+
+.form-message.erro {
+    color: #dc2626;
+}
+
+.activity-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.activity-actions form {
+    flex: 1;
+}
+
+.activity-actions .status-button {
+    width: 100%;
+}
+
+.activity-item {
+    position: relative;
+}
+
+.delete-activity-form {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 2;
+}
+
+.delete-activity-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 28px;
+    height: 28px;
+
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+
+    background: transparent;
+    color: #9ca3af;
+
+    cursor: pointer;
+    transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+.delete-activity-btn:hover {
+    color: #dc2626;
+    background-color: #fee2e2;
+}
+
+.delete-activity-btn:focus-visible {
+    outline: 2px solid #dc2626;
+    outline-offset: 2px;
+}
+
+/* Evita que o conteúdo fique embaixo do X */
+.activity-item-top {
+    padding-right: 32px;
+}

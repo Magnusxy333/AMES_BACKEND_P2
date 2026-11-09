@@ -1,3 +1,273 @@
+<?php
+
+include_once 'conexao.php';
+
+// ID do usuário logado 
+// mudar para $_SESSION['id_usuario'])
+$id_usuario = 0; 
+
+
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao_atividade'])) {
+
+    $acao = $_POST['acao_atividade'];
+    $id_atividade = filter_var(
+        $_POST['id_atividade'] ?? null,
+        FILTER_VALIDATE_INT
+    );
+
+    if (!$id_atividade || !in_array($acao, ['concluir', 'reabrir', 'excluir'], true)) {
+        die('Ação ou atividade inválida.');
+    }
+
+    try {
+        $pdo->beginTransaction();
+
+        // Confirmar que a atividade pertence ao usuário
+        $sql = "SELECT titulo
+                FROM atividade
+                WHERE id_atividade = :id_atividade
+                AND id_usuario = :id_usuario
+                FOR UPDATE";
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([
+            ':id_atividade' => $id_atividade,
+            ':id_usuario' => $id_usuario
+        ]);
+
+        $atividade = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$atividade) {
+            throw new Exception('Atividade não encontrada.');
+        }
+
+        if ($acao === 'concluir' || $acao === 'reabrir') {
+
+            $status = $acao === 'concluir'
+                ? 'concluida'
+                : 'pendente';
+
+            $sql = "UPDATE atividade
+                    SET status = :status
+                    WHERE id_atividade = :id_atividade
+                    AND id_usuario = :id_usuario";
+
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([
+                ':status' => $status,
+                ':id_atividade' => $id_atividade,
+                ':id_usuario' => $id_usuario
+            ]);
+
+        } elseif ($acao === 'excluir') {
+
+            // Excluir primeiro os lembretes relacionados
+            $stmt = $pdo->prepare(
+                "DELETE FROM lembrete WHERE id_atividade = ?"
+            );
+            $stmt->execute([$id_atividade]);
+
+            // Excluir a atividade
+            $stmt = $pdo->prepare(
+                "DELETE FROM atividade
+                 WHERE id_atividade = ?
+                 AND id_usuario = ?"
+            );
+            $stmt->execute([$id_atividade, $id_usuario]);
+        }
+
+        $pdo->commit();
+
+        registrarLog(
+            $pdo,
+            $id_usuario,
+            'Atividade: ' . $acao,
+            'Atividade: ' . $atividade['titulo']
+        );
+
+        header('Location: activities.php?acao=' . $acao, true, 303);
+        exit;
+
+    } catch (Exception $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+
+        die('Erro ao processar atividade: ' . htmlspecialchars($e->getMessage()));
+    }
+}
+
+
+$mensagem = '';
+$tipo_mensagem  = '';
+
+$mensagensAcoes = [
+    'concluir' => 'Atividade concluída com sucesso!',
+    'reabrir' => 'Atividade reaberta com sucesso!',
+    'excluir' => 'Atividade excluída com sucesso!'
+];
+
+$acaoRealizada = $_GET['acao'] ?? '';
+
+if (isset($mensagensAcoes[$acaoRealizada])) {
+    $mensagem = $mensagensAcoes[$acaoRealizada];
+    $tipo_mensagem = 'sucesso';
+}
+if (($_GET['cadastro'] ?? '') === 'sucesso') {
+    $mensagem = 'Atividade cadastrada com sucesso!';
+    $tipo_mensagem = 'sucesso';
+}
+
+
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST'
+    && !isset($_POST['acao_atividade'])
+) {
+
+    $titulo = trim($_POST['titulo'] ?? '');
+    $descricao = trim($_POST['descricao'] ?? '');
+    $categoria = trim($_POST['categoria'] ?? '');
+
+    $data_inicio = $_POST['data_hora_inicio'] ?? '';
+    $data_fim = $_POST['data_hora_fim'] ?? '';
+   
+    if ($titulo === '' || $categoria === '') {
+    $mensagem = 'Preencha o título e selecione uma categoria.';
+    $tipo_mensagem = 'erro';
+} else {
+   try {
+    // Buscar a categoria selecionada
+    $sql_categoria = "SELECT id_categoria
+                      FROM categoria_atividade
+                      WHERE nome_categoria = :categoria";
+
+    $stmt_categoria = $pdo->prepare($sql_categoria);
+
+    $stmt_categoria->execute([
+        ':categoria' => $categoria
+    ]);
+
+    $id_categoria = $stmt_categoria->fetchColumn();
+
+    if ($id_categoria === false) {
+        throw new Exception('Categoria não encontrada.');
+    }
+
+    // Converter datas vazias para NULL
+    $data_inicio = $data_inicio !== ''
+        ? str_replace('T', ' ', $data_inicio)
+        : null;
+
+    $data_fim = $data_fim !== ''
+        ? str_replace('T', ' ', $data_fim)
+        : null;
+
+    // Validar a ordem das datas
+    if ($data_inicio !== null && $data_fim !== null
+        && strtotime($data_fim) < strtotime($data_inicio)) {
+        throw new Exception(
+            'A data de término não pode ser anterior à data de início.'
+        );
+    }
+
+    // Cadastrar atividade
+    $sql = "INSERT INTO atividade
+                (id_usuario, id_categoria, titulo, descricao,
+                 data_hora_inicio, data_hora_fim, status)
+            VALUES
+                (:id_usuario, :id_categoria, :titulo, :descricao,
+                 :data_inicio, :data_fim, :status)";
+
+    $stmt = $pdo->prepare($sql);
+
+    $stmt->execute([
+        ':id_usuario' => $id_usuario,
+        ':id_categoria' => $id_categoria,
+        ':titulo' => $titulo,
+        ':descricao' => $descricao !== '' ? $descricao : null,
+        ':data_inicio' => $data_inicio,
+        ':data_fim' => $data_fim,
+        ':status' => 'pendente'
+    ]);
+
+    // Registrar a ação no histórico
+    registrarLog(
+        $pdo,
+        $id_usuario,
+        'Cadastro de atividade',
+        'Cadastrou a atividade: ' . $titulo
+    );
+
+    header('Location: activities.php?cadastro=sucesso', true, 303);
+    exit;
+
+} catch (Exception $e) {
+    $mensagem = 'Erro ao cadastrar: ' . $e->getMessage();
+    $tipo_mensagem = 'erro';
+}
+}
+}
+
+
+// Busca as atividades e o nome da categoria relacionada no banco
+$sql = "SELECT a.*, c.nome_categoria 
+        FROM atividade a 
+        LEFT JOIN categoria_atividade c ON a.id_categoria = c.id_categoria 
+        WHERE a.id_usuario = ? 
+        ORDER BY a.data_hora_criacao DESC";
+
+$stmt = $pdo->prepare($sql);
+$stmt->execute([$id_usuario]);
+$atividades = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+$atividadesPendentes = array_filter(
+    $atividades,
+    fn($a) => strtolower($a['status'] ?? '') === 'pendente'
+);
+
+$atividadesConcluidas = array_filter(
+    $atividades,
+    fn($a) => strtolower($a['status'] ?? '') === 'concluida'
+);
+
+// Contadores dinâmicos para o resumo
+$totalAtividades = count($atividades);
+$totalPendentes = count($atividadesPendentes);
+$totalConcluidas = count($atividadesConcluidas);
+
+// Funções auxiliares para definir as classes CSS e os ícones com base na categoria
+function obterClasseTipo($nomeCategoria) {
+    switch (mb_strtolower(trim($nomeCategoria ?? ''))) {
+        case 'medicamento': return 'type-medicamento';
+        case 'tarefa domestica': return 'type-domestica';
+        case 'compromisso': return 'type-compromisso';
+        default: return 'type-outro';
+    }
+}
+
+function obterIconeTipo($nomeCategoria) {
+    switch (mb_strtolower(trim($nomeCategoria ?? ''))) {
+        case 'medicamento': return 'fa-pills';
+        case 'tarefa domestica': return 'fa-house';
+        case 'compromisso': return 'fa-calendar-check';
+        default: return 'fa-bookmark';
+    }
+}
+
+function formatarData($data) {
+    if (empty($data)) {
+        return 'Não informada';
+    }
+
+    return date('d/m/Y, H:i', strtotime($data));
+}
+
+
+
+
+
+?>
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -19,6 +289,7 @@
     <link rel="stylesheet" href="styles/activities.css">
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+   <script src="scripts/activities.js" defer></script>
 </head>
 
 <body>
@@ -73,7 +344,7 @@
         </div>
 
     </div>
-
+<!--
     <button
         type="button"
         class="new-activity-btn"
@@ -82,50 +353,29 @@
         <i class="fas fa-plus"></i>
         Nova atividade
     </button>
-
+-->
 </section>
 
-        <!-- RESUMO ESTÁTICO -->
+    <!-- RESUMO DINÂMICO -->
         <section class="activities-summary">
-
             <article class="summary-card">
-                <div class="summary-icon total-icon">
-                    <i class="fas fa-layer-group"></i>
-                </div>
-
-                <div>
-                    <span>Total</span>
-                    <strong>4</strong>
-                </div>
+                <div class="summary-icon total-icon"><i class="fas fa-layer-group"></i></div>
+                <div><span>Total</span><strong><?= $totalAtividades ?></strong></div>
             </article>
-
             <article class="summary-card">
-                <div class="summary-icon pending-icon">
-                    <i class="fas fa-clock"></i>
-                </div>
-
-                <div>
-                    <span>Pendentes</span>
-                    <strong>2</strong>
-                </div>
+                <div class="summary-icon pending-icon"><i class="fas fa-clock"></i></div>
+                <div><span>Pendentes</span><strong><?= $totalPendentes ?></strong></div>
             </article>
-
             <article class="summary-card">
-                <div class="summary-icon completed-icon">
-                    <i class="fas fa-circle-check"></i>
-                </div>
-
-                <div>
-                    <span>Concluídas</span>
-                    <strong>2</strong>
-                </div>
+                <div class="summary-icon completed-icon"><i class="fas fa-circle-check"></i></div>
+                <div><span>Concluídas</span><strong><?= $totalConcluidas ?></strong></div>
             </article>
-
         </section>
 
         <section class="activities-workspace">
 
             <!-- FORMULÁRIO APENAS VISUAL -->
+           
             <article class="activity-form-card">
 
                 <div class="card-heading">
@@ -139,7 +389,8 @@
                     </div>
                 </div>
 
-                <div class="activity-form">
+               
+<form class="activity-form" method="POST" action="">
 
 <div class="activity-form-grid">
 
@@ -152,6 +403,9 @@
             type="text"
             id="activityTitle"
             placeholder="Ex.: Tomar medicamento"
+            name = "titulo"
+            maxlength="150"
+            required
         >
     </div>
 
@@ -164,35 +418,25 @@
         <textarea
             id="activityDescription"
             rows="3"
+            name = "descricao"
             placeholder="Inclua informações importantes sobre a atividade"
+            maxlength="500"
         ></textarea>
     </div>
 
-    <div class="form-field">
+    <div class="form-field full-field">
         <label for="activityType">
             Tipo de atividade
         </label>
 
-        <select id="activityType">
-            <option selected>Selecione o tipo</option>
-            <option>Tarefa doméstica</option>
-            <option>Compromisso</option>
-            <option>Medicamento</option>
-            <option>Outro</option>
+        <select id="activityType" name="categoria" required>
+            <option value="" selected>Selecione o tipo</option>
+            <option value="tarefa domestica">Tarefa doméstica</option>
+            <option value="compromisso">Compromisso</option>
+            <option value="medicamento">Medicamento</option>
+            <option value="outro">Outro</option>
         </select>
     </div>
-
-<div class="form-field">
-    <label for="creationDateTime">
-        Data e hora da criação
-    </label>
-
-    <input
-        type="datetime-local"
-        id="creationDateTime"
-        step="60"
-    >
-</div>
 
 <div class="form-field">
     <label for="startDateTime">
@@ -202,6 +446,7 @@
     <input
         type="datetime-local"
         id="startDateTime"
+        name = "data_hora_inicio"
         step="60"
     >
 </div>
@@ -214,23 +459,32 @@
     <input
         type="datetime-local"
         id="endDateTime"
+        name = "data_hora_fim"
         step="60"
     >
 </div>
 
 </div>
 
-<p class="form-message"></p>
+<?php if ($mensagem !== ''): ?>
+    <p class="form-message <?= $tipo_mensagem ?>">
+        <?= htmlspecialchars($mensagem, ENT_QUOTES, 'UTF-8') ?>
+    </p>
+<?php endif; ?>
 
-<button
-    type="button"
-    class="save-activity-btn"
-    disabled
->
-    <i class="fas fa-plus-circle"></i>
-    Cadastrar atividade
-</button>
-                </div>
+<div class="form-actions">
+    <button type="reset" class="clear-activity-btn">
+       
+        Limpar campos
+    </button>
+
+    <button type="submit" class="save-activity-btn">
+        <i class="fas fa-plus-circle"></i>
+        Cadastrar atividade
+    </button>
+</div>
+</form>              
+
             </article>
 
             <!-- ATIVIDADES FICTÍCIAS E ESTÁTICAS -->
@@ -264,277 +518,279 @@
                     >
                 </div>
 
-                    <select>
-                        <option selected>Todos os tipos</option>
-                        <option>Tarefa doméstica</option>
-                        <option>Compromisso</option>
-                        <option>Medicamento</option>
-                        <option>Outro</option>
+                    <select id="activityCategoryFilter">
+                        <option value="todos" selected>Todos os tipos</option>
+                        <option value = "tarefa domestica">Tarefa doméstica</option>
+                        <option value = "compromisso">Compromisso</option>
+                        <option value = "medicamento">Medicamento</option>
+                        <option value = "outro">Outro</option>
                     </select>
 
                 </div>
 
-                <div class="activity-columns">
+            
+<div class="activity-columns">
 
-                    <!-- PENDENTES -->
-                    <section class="activity-panel pending-panel">
+    <!-- ATIVIDADES PENDENTES -->
+    <section class="activity-panel pending-panel">
 
-                        <div class="panel-heading">
+        <div class="panel-heading">
+            <div>
+                <span class="status-dot pending-dot"></span>
+                <h3>Pendentes</h3>
+            </div>
+
+            <span class="panel-count">
+                <?= $totalPendentes ?>
+            </span>
+        </div>
+
+        <div class="activity-list">
+
+            <?php if (empty($atividadesPendentes)): ?>
+                <p>Nenhuma atividade pendente.</p>
+            <?php else: ?>
+
+                <?php foreach ($atividadesPendentes as $atividade): ?>
+
+                    <article class="activity-item"  
+                    data-category="<?= htmlspecialchars($atividade['nome_categoria'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
+>
+  <form method="POST" action="activities.php"
+      class="delete-activity-form"
+      onsubmit="return confirm('Deseja realmente excluir esta atividade?');">
+
+    <input type="hidden"
+           name="id_atividade"
+           value="<?= (int) $atividade['id_atividade'] ?>">
+
+    <button type="submit"
+            name="acao_atividade"
+            value="excluir"
+            class="delete-activity-btn"
+            title="Excluir atividade"
+            aria-label="Excluir atividade">
+
+        <i class="fas fa-xmark"></i>
+
+    </button>
+</form>
+                        <div class="activity-item-top">
+
+                            <span class="activity-type-badge <?= obterClasseTipo($atividade['nome_categoria']) ?>">
+                                <i class="fas <?= obterIconeTipo($atividade['nome_categoria']) ?>"></i>
+
+                                <?= htmlspecialchars($atividade['nome_categoria'] ?? 'Outro') ?>
+                            </span>
+
+                            <span class="activity-status">
+                                Pendente
+                            </span>
+
+                        </div>
+
+                        <h4>
+                            <?= htmlspecialchars($atividade['titulo'] ?? '') ?>
+                        </h4>
+
+                        <p class="activity-description">
+                            <?= htmlspecialchars($atividade['descricao'] ?? '') ?>
+                        </p>
+
+                        <dl class="activity-dates">
+
                             <div>
-                                <span class="status-dot pending-dot"></span>
-                                <h3>Pendentes</h3>
+                                <dt>
+                                    <i class="fas fa-calendar-plus"></i>
+                                    Criada em
+                                </dt>
+                                <dd>
+                                    <?= formatarData($atividade['data_hora_criacao']) ?>
+                                </dd>
                             </div>
 
-                            <span class="panel-count">2</span>
-                        </div>
-
-                        <div class="activity-list">
-
-                            <article class="activity-item">
-
-                                <div class="activity-item-top">
-                                    <span class="activity-type-badge type-medicamento">
-                                        <i class="fas fa-pills"></i>
-                                        Medicamento
-                                    </span>
-
-                                    <span class="activity-status">
-                                        Pendente
-                                    </span>
-                                </div>
-
-                                <h4>Tomar medicamento da manhã</h4>
-
-                                <p class="activity-description">
-                                    Tomar o medicamento após o café da manhã.
-                                </p>
-
-                                <dl class="activity-dates">
-                                    <div>
-                                        <dt>
-                                            <i class="fas fa-calendar-plus"></i>
-                                            Criada em
-                                        </dt>
-                                        <dd>14/09/2026, 07:30</dd>
-                                    </div>
-
-                                    <div>
-                                        <dt>
-                                            <i class="fas fa-play"></i>
-                                            Início
-                                        </dt>
-                                        <dd>14/09/2026, 08:00</dd>
-                                    </div>
-
-                                    <div>
-                                        <dt>
-                                            <i class="fas fa-flag-checkered"></i>
-                                            Término
-                                        </dt>
-                                        <dd>14/09/2026, 08:15</dd>
-                                    </div>
-                                </dl>
-
-                                <button
-                                    type="button"
-                                    class="status-button"
-                                    disabled
-                                >
-                                    <i class="fas fa-check"></i>
-                                    Marcar como concluída
-                                </button>
-
-                            </article>
-
-                            <article class="activity-item">
-
-                                <div class="activity-item-top">
-                                    <span class="activity-type-badge type-domestica">
-                                        <i class="fas fa-house"></i>
-                                        Tarefa doméstica
-                                    </span>
-
-                                    <span class="activity-status">
-                                        Pendente
-                                    </span>
-                                </div>
-
-                                <h4>Organizar documentos pessoais</h4>
-
-                                <p class="activity-description">
-                                    Separar contas, documentos e comprovantes importantes.
-                                </p>
-
-                                <dl class="activity-dates">
-                                    <div>
-                                        <dt>
-                                            <i class="fas fa-calendar-plus"></i>
-                                            Criada em
-                                        </dt>
-                                        <dd>13/09/2026, 17:30</dd>
-                                    </div>
-
-                                    <div>
-                                        <dt>
-                                            <i class="fas fa-play"></i>
-                                            Início
-                                        </dt>
-                                        <dd>15/09/2026, 14:00</dd>
-                                    </div>
-
-                                    <div>
-                                        <dt>
-                                            <i class="fas fa-flag-checkered"></i>
-                                            Término
-                                        </dt>
-                                        <dd>15/09/2026, 15:30</dd>
-                                    </div>
-                                </dl>
-
-                                <button
-                                    type="button"
-                                    class="status-button"
-                                    disabled
-                                >
-                                    <i class="fas fa-check"></i>
-                                    Marcar como concluída
-                                </button>
-
-                            </article>
-
-                        </div>
-                    </section>
-
-                    <!-- CONCLUÍDAS -->
-                    <section class="activity-panel completed-panel">
-
-                        <div class="panel-heading">
                             <div>
-                                <span class="status-dot completed-dot"></span>
-                                <h3>Concluídas</h3>
+                                <dt>
+                                    <i class="fas fa-play"></i>
+                                    Início
+                                </dt>
+                                <dd>
+                                    <?= formatarData($atividade['data_hora_inicio']) ?>
+                                </dd>
                             </div>
 
-                            <span class="panel-count">2</span>
-                        </div>
+                            <div>
+                                <dt>
+                                    <i class="fas fa-flag-checkered"></i>
+                                    Término
+                                </dt>
+                                <dd>
+                                    <?= formatarData($atividade['data_hora_fim']) ?>
+                                </dd>
+                            </div>
 
-                        <div class="activity-list">
+                        </dl>
 
-                            <article class="activity-item is-completed">
+                        
+<div class="activity-actions">
 
-                                <div class="activity-item-top">
-                                    <span class="activity-type-badge type-compromisso">
-                                        <i class="fas fa-calendar-check"></i>
-                                        Compromisso
-                                    </span>
+    <form method="POST" action="activities.php">
+        <input type="hidden" name="id_atividade"
+               value="<?= (int) $atividade['id_atividade'] ?>">
 
-                                    <span class="activity-status">
-                                        Concluída
-                                    </span>
-                                </div>
+        <button type="submit"
+                name="acao_atividade"
+                value="concluir"
+                class="status-button">
+            <i class="fas fa-check"></i>
+            Marcar como concluída
+        </button>
+    </form>
 
-                                <h4>Consulta médica</h4>
 
-                                <p class="activity-description">
-                                    Levar documentos e resultados dos últimos exames.
-                                </p>
 
-                                <dl class="activity-dates">
-                                    <div>
-                                        <dt>
-                                            <i class="fas fa-calendar-plus"></i>
-                                            Criada em
-                                        </dt>
-                                        <dd>10/09/2026, 10:00</dd>
-                                    </div>
+</div>
 
-                                    <div>
-                                        <dt>
-                                            <i class="fas fa-play"></i>
-                                            Início
-                                        </dt>
-                                        <dd>13/09/2026, 09:00</dd>
-                                    </div>
 
-                                    <div>
-                                        <dt>
-                                            <i class="fas fa-flag-checkered"></i>
-                                            Término
-                                        </dt>
-                                        <dd>13/09/2026, 10:00</dd>
-                                    </div>
-                                </dl>
+                    </article>
 
-                                <button
-                                    type="button"
-                                    class="status-button"
-                                    disabled
-                                >
-                                    <i class="fas fa-rotate-left"></i>
-                                    Reabrir atividade
-                                </button>
+                <?php endforeach; ?>
 
-                            </article>
+            <?php endif; ?>
 
-                            <article class="activity-item is-completed">
+        </div>
+    </section>
 
-                                <div class="activity-item-top">
-                                    <span class="activity-type-badge type-domestica">
-                                        <i class="fas fa-house"></i>
-                                        Tarefa doméstica
-                                    </span>
 
-                                    <span class="activity-status">
-                                        Concluída
-                                    </span>
-                                </div>
+    <!-- ATIVIDADES CONCLUÍDAS -->
+    <section class="activity-panel completed-panel">
 
-                                <h4>Guardar as compras</h4>
+        <div class="panel-heading">
+            <div>
+                <span class="status-dot completed-dot"></span>
+                <h3>Concluídas</h3>
+            </div>
 
-                                <p class="activity-description">
-                                    Organizar os alimentos e produtos nos armários.
-                                </p>
+            <span class="panel-count">
+                <?= $totalConcluidas ?>
+            </span>
+        </div>
 
-                                <dl class="activity-dates">
-                                    <div>
-                                        <dt>
-                                            <i class="fas fa-calendar-plus"></i>
-                                            Criada em
-                                        </dt>
-                                        <dd>11/09/2026, 13:00</dd>
-                                    </div>
+        <div class="activity-list">
 
-                                    <div>
-                                        <dt>
-                                            <i class="fas fa-play"></i>
-                                            Início
-                                        </dt>
-                                        <dd>12/09/2026, 17:00</dd>
-                                    </div>
+            <?php if (empty($atividadesConcluidas)): ?>
+                <p>Nenhuma atividade concluída.</p>
+            <?php else: ?>
 
-                                    <div>
-                                        <dt>
-                                            <i class="fas fa-flag-checkered"></i>
-                                            Término
-                                        </dt>
-                                        <dd>12/09/2026, 17:30</dd>
-                                    </div>
-                                </dl>
+                <?php foreach ($atividadesConcluidas as $atividade): ?>
 
-                                <button
-                                    type="button"
-                                    class="status-button"
-                                    disabled
-                                >
-                                    <i class="fas fa-rotate-left"></i>
-                                    Reabrir atividade
-                                </button>
+                    <article class="activity-item is-completed" 
+                    data-category="<?= htmlspecialchars($atividade['nome_categoria'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
 
-                            </article>
+  <form method="POST" action="activities.php"
+      class="delete-activity-form"
+      onsubmit="return confirm('Deseja realmente excluir esta atividade?');">
+
+    <input type="hidden"
+           name="id_atividade"
+           value="<?= (int) $atividade['id_atividade'] ?>">
+
+    <button type="submit"
+            name="acao_atividade"
+            value="excluir"
+            class="delete-activity-btn"
+            title="Excluir atividade"
+            aria-label="Excluir atividade">
+
+        <i class="fas fa-xmark"></i>
+
+    </button>
+</form>
+                        <div class="activity-item-top">
+
+                            <span class="activity-type-badge <?= obterClasseTipo($atividade['nome_categoria']) ?>">
+                                <i class="fas <?= obterIconeTipo($atividade['nome_categoria']) ?>"></i>
+
+                                <?= htmlspecialchars($atividade['nome_categoria'] ?? 'Outro') ?>
+                            </span>
+
+                            <span class="activity-status">
+                                Concluída
+                            </span>
 
                         </div>
-                    </section>
 
-                </div>
+                        <h4>
+                            <?= htmlspecialchars($atividade['titulo'] ?? '') ?>
+                        </h4>
+
+                        <p class="activity-description">
+                            <?= htmlspecialchars($atividade['descricao'] ?? '') ?>
+                        </p>
+
+                        <dl class="activity-dates">
+
+                            <div>
+                                <dt>
+                                    <i class="fas fa-calendar-plus"></i>
+                                    Criada em
+                                </dt>
+                                <dd>
+                                    <?= formatarData($atividade['data_hora_criacao']) ?>
+                                </dd>
+                            </div>
+
+                            <div>
+                                <dt>
+                                    <i class="fas fa-play"></i>
+                                    Início
+                                </dt>
+                                <dd>
+                                    <?= formatarData($atividade['data_hora_inicio']) ?>
+                                </dd>
+                            </div>
+
+                            <div>
+                                <dt>
+                                    <i class="fas fa-flag-checkered"></i>
+                                    Término
+                                </dt>
+                                <dd>
+                                    <?= formatarData($atividade['data_hora_fim']) ?>
+                                </dd>
+                            </div>
+
+                        </dl>
+
+                       <div class="activity-actions">
+
+    <form method="POST" action="activities.php">
+        <input type="hidden" name="id_atividade"
+               value="<?= (int) $atividade['id_atividade'] ?>">
+
+        <button type="submit"
+                name="acao_atividade"
+                value="reabrir"
+                class="status-button">
+            <i class="fas fa-rotate-left"></i>
+            Reabrir atividade
+        </button>
+    </form>
+
+
+</div>
+
+                    </article>
+
+                <?php endforeach; ?>
+
+            <?php endif; ?>
+
+        </div>
+    </section>
+
+</div>
+
             </article>
 
         </section>
