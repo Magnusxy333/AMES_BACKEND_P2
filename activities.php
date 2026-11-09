@@ -7,16 +7,123 @@ include_once 'conexao.php';
 $id_usuario = 0; 
 
 
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao_atividade'])) {
+
+    $acao = $_POST['acao_atividade'];
+    $id_atividade = filter_var(
+        $_POST['id_atividade'] ?? null,
+        FILTER_VALIDATE_INT
+    );
+
+    if (!$id_atividade || !in_array($acao, ['concluir', 'reabrir', 'excluir'], true)) {
+        die('Ação ou atividade inválida.');
+    }
+
+    try {
+        $pdo->beginTransaction();
+
+        // Confirmar que a atividade pertence ao usuário
+        $sql = "SELECT titulo
+                FROM atividade
+                WHERE id_atividade = :id_atividade
+                AND id_usuario = :id_usuario
+                FOR UPDATE";
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([
+            ':id_atividade' => $id_atividade,
+            ':id_usuario' => $id_usuario
+        ]);
+
+        $atividade = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$atividade) {
+            throw new Exception('Atividade não encontrada.');
+        }
+
+        if ($acao === 'concluir' || $acao === 'reabrir') {
+
+            $status = $acao === 'concluir'
+                ? 'concluida'
+                : 'pendente';
+
+            $sql = "UPDATE atividade
+                    SET status = :status
+                    WHERE id_atividade = :id_atividade
+                    AND id_usuario = :id_usuario";
+
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([
+                ':status' => $status,
+                ':id_atividade' => $id_atividade,
+                ':id_usuario' => $id_usuario
+            ]);
+
+        } elseif ($acao === 'excluir') {
+
+            // Excluir primeiro os lembretes relacionados
+            $stmt = $pdo->prepare(
+                "DELETE FROM lembrete WHERE id_atividade = ?"
+            );
+            $stmt->execute([$id_atividade]);
+
+            // Excluir a atividade
+            $stmt = $pdo->prepare(
+                "DELETE FROM atividade
+                 WHERE id_atividade = ?
+                 AND id_usuario = ?"
+            );
+            $stmt->execute([$id_atividade, $id_usuario]);
+        }
+
+        $pdo->commit();
+
+        registrarLog(
+            $pdo,
+            $id_usuario,
+            'Atividade: ' . $acao,
+            'Atividade: ' . $atividade['titulo']
+        );
+
+        header('Location: activities.php?acao=' . $acao, true, 303);
+        exit;
+
+    } catch (Exception $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+
+        die('Erro ao processar atividade: ' . htmlspecialchars($e->getMessage()));
+    }
+}
+
+
 $mensagem = '';
 $tipo_mensagem  = '';
 
+$mensagensAcoes = [
+    'concluir' => 'Atividade concluída com sucesso!',
+    'reabrir' => 'Atividade reaberta com sucesso!',
+    'excluir' => 'Atividade excluída com sucesso!'
+];
+
+$acaoRealizada = $_GET['acao'] ?? '';
+
+if (isset($mensagensAcoes[$acaoRealizada])) {
+    $mensagem = $mensagensAcoes[$acaoRealizada];
+    $tipo_mensagem = 'sucesso';
+}
 if (($_GET['cadastro'] ?? '') === 'sucesso') {
     $mensagem = 'Atividade cadastrada com sucesso!';
     $tipo_mensagem = 'sucesso';
 }
 
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST'
+    && !isset($_POST['acao_atividade'])
+) {
 
     $titulo = trim($_POST['titulo'] ?? '');
     $descricao = trim($_POST['descricao'] ?? '');
@@ -182,6 +289,7 @@ function formatarData($data) {
     <link rel="stylesheet" href="styles/activities.css">
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+   <script src="scripts/activities.js" defer></script>
 </head>
 
 <body>
@@ -329,20 +437,7 @@ function formatarData($data) {
             <option value="outro">Outro</option>
         </select>
     </div>
- <!--
-<div class="form-field">
-    <label for="creationDateTime">
-        Data e hora da criação
-    </label>
 
-    <input
-        type="datetime-local"
-        id="creationDateTime"
-        step="60"
-    >
-    
-</div>
--->
 <div class="form-field">
     <label for="startDateTime">
         Data e hora de início
@@ -379,7 +474,7 @@ function formatarData($data) {
 
 <div class="form-actions">
     <button type="reset" class="clear-activity-btn">
-        <i class="fas fa-eraser"></i>
+       
         Limpar campos
     </button>
 
@@ -423,12 +518,12 @@ function formatarData($data) {
                     >
                 </div>
 
-                    <select>
-                        <option selected>Todos os tipos</option>
-                        <option>Tarefa doméstica</option>
-                        <option>Compromisso</option>
-                        <option>Medicamento</option>
-                        <option>Outro</option>
+                    <select id="activityCategoryFilter">
+                        <option value="todos" selected>Todos os tipos</option>
+                        <option value = "tarefa domestica">Tarefa doméstica</option>
+                        <option value = "compromisso">Compromisso</option>
+                        <option value = "medicamento">Medicamento</option>
+                        <option value = "outro">Outro</option>
                     </select>
 
                 </div>
@@ -458,8 +553,28 @@ function formatarData($data) {
 
                 <?php foreach ($atividadesPendentes as $atividade): ?>
 
-                    <article class="activity-item">
+                    <article class="activity-item"  
+                    data-category="<?= htmlspecialchars($atividade['nome_categoria'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
+>
+  <form method="POST" action="activities.php"
+      class="delete-activity-form"
+      onsubmit="return confirm('Deseja realmente excluir esta atividade?');">
 
+    <input type="hidden"
+           name="id_atividade"
+           value="<?= (int) $atividade['id_atividade'] ?>">
+
+    <button type="submit"
+            name="acao_atividade"
+            value="excluir"
+            class="delete-activity-btn"
+            title="Excluir atividade"
+            aria-label="Excluir atividade">
+
+        <i class="fas fa-xmark"></i>
+
+    </button>
+</form>
                         <div class="activity-item-top">
 
                             <span class="activity-type-badge <?= obterClasseTipo($atividade['nome_categoria']) ?>">
@@ -516,10 +631,26 @@ function formatarData($data) {
 
                         </dl>
 
-                        <button type="button" class="status-button" disabled>
-                            <i class="fas fa-check"></i>
-                            Marcar como concluída
-                        </button>
+                        
+<div class="activity-actions">
+
+    <form method="POST" action="activities.php">
+        <input type="hidden" name="id_atividade"
+               value="<?= (int) $atividade['id_atividade'] ?>">
+
+        <button type="submit"
+                name="acao_atividade"
+                value="concluir"
+                class="status-button">
+            <i class="fas fa-check"></i>
+            Marcar como concluída
+        </button>
+    </form>
+
+
+
+</div>
+
 
                     </article>
 
@@ -553,8 +684,28 @@ function formatarData($data) {
 
                 <?php foreach ($atividadesConcluidas as $atividade): ?>
 
-                    <article class="activity-item is-completed">
+                    <article class="activity-item is-completed" 
+                    data-category="<?= htmlspecialchars($atividade['nome_categoria'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
 
+  <form method="POST" action="activities.php"
+      class="delete-activity-form"
+      onsubmit="return confirm('Deseja realmente excluir esta atividade?');">
+
+    <input type="hidden"
+           name="id_atividade"
+           value="<?= (int) $atividade['id_atividade'] ?>">
+
+    <button type="submit"
+            name="acao_atividade"
+            value="excluir"
+            class="delete-activity-btn"
+            title="Excluir atividade"
+            aria-label="Excluir atividade">
+
+        <i class="fas fa-xmark"></i>
+
+    </button>
+</form>
                         <div class="activity-item-top">
 
                             <span class="activity-type-badge <?= obterClasseTipo($atividade['nome_categoria']) ?>">
@@ -611,10 +762,23 @@ function formatarData($data) {
 
                         </dl>
 
-                        <button type="button" class="status-button" disabled>
-                            <i class="fas fa-rotate-left"></i>
-                            Reabrir atividade
-                        </button>
+                       <div class="activity-actions">
+
+    <form method="POST" action="activities.php">
+        <input type="hidden" name="id_atividade"
+               value="<?= (int) $atividade['id_atividade'] ?>">
+
+        <button type="submit"
+                name="acao_atividade"
+                value="reabrir"
+                class="status-button">
+            <i class="fas fa-rotate-left"></i>
+            Reabrir atividade
+        </button>
+    </form>
+
+
+</div>
 
                     </article>
 
