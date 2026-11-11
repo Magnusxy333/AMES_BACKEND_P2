@@ -249,7 +249,9 @@ if (
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
+    <link rel="stylesheet" href="styles/check_notifications.css">
     <script src="scripts/notifications.js" defer></script>
+    <script src="scripts/check_notifications.js" defer></script>
 </head>
 
 <body>
@@ -404,7 +406,7 @@ if (
                             ></textarea>
                         </div>
 
-                        <div class="form-field">
+                        <div class="form-field full-field">
                             <label for="reminderDateTime">
                                 Data e hora do lembrete
                             </label>
@@ -417,7 +419,7 @@ if (
                                 required
                             >
                         </div>
-
+<!---
                         <div class="form-field">
                             <label for="reminderAdvance">
                                 Antecedência
@@ -435,7 +437,7 @@ if (
                                 <option>1 dia antes</option>
                             </select>
                         </div>
-
+--->
                         <div class="form-field full-field">
                             <label for="reminderChannel">
                                 Forma de aviso

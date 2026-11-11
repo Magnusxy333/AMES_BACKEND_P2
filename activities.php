@@ -290,6 +290,8 @@ function formatarData($data) {
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
    <script src="scripts/activities.js" defer></script>
+<link rel="stylesheet" href="styles/check_notifications.css">
+   <script src="scripts/check_notifications.js" defer></script>
 </head>
 
 <body>

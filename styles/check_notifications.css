@@ -1,0 +1,55 @@
+
+.ames-notificacao {
+    position: fixed;
+    top: 90px;
+    right: 20px;
+    z-index: 9999;
+
+    width: 320px;
+    max-width: calc(100vw - 40px);
+    padding: 20px 40px 20px 20px;
+
+    background: #ffffff;
+    color: #1f2937;
+
+    border-left: 5px solid #705ea1;
+    border-radius: 12px;
+
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
+
+    animation: aparecerNotificacao 0.3s ease;
+}
+
+.ames-notificacao strong {
+    display: block;
+    margin-bottom: 8px;
+}
+
+.ames-notificacao p {
+    margin: 0;
+    font-size: 14px;
+}
+
+.ames-notificacao button {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+
+    border: none;
+    background: transparent;
+
+    font-size: 24px;
+    cursor: pointer;
+}
+
+@keyframes aparecerNotificacao {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
