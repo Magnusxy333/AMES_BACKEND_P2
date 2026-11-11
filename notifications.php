@@ -1,3 +1,232 @@
+<?php
+include_once 'conexao.php';
+$id_usuario = 0; // Substitua pelo ID do usuário logado
+
+
+$sql = "SELECT id_atividade, titulo
+        FROM atividade
+        WHERE id_usuario = :id_usuario
+        ORDER BY titulo ASC";
+
+$stmt = $pdo->prepare($sql);
+
+$stmt->execute([
+    ':id_usuario' => $id_usuario
+]);
+
+$atividades = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+
+$mensagem = '';
+$tipo_mensagem = '';
+
+if (($_GET['acao'] ?? '') === 'excluir') {
+    $mensagem = 'Lembrete excluído com sucesso!';
+    $tipo_mensagem = 'sucesso';
+}
+
+
+if (($_GET['cadastro'] ?? '') === 'sucesso') {
+    $mensagem = 'Lembrete cadastrado com sucesso!';
+    $tipo_mensagem = 'sucesso';
+}
+
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST' &&
+    !isset($_POST['acao_lembrete'])
+) {
+
+    $id_atividade = filter_var(
+        $_POST['id_atividade'] ?? null,
+        FILTER_VALIDATE_INT
+    );
+
+    $mensagem_lembrete = trim($_POST['mensagem'] ?? '');
+    $data_hora = $_POST['data_hora_lembrete'] ?? '';
+
+    if (!$id_atividade || $data_hora === '') {
+        $mensagem = 'Selecione uma atividade e informe a data do lembrete.';
+        $tipo_mensagem = 'erro';
+
+    } else {
+        try {
+            // Verificar se a atividade pertence ao usuário
+            $sql = "SELECT id_atividade
+                    FROM atividade
+                    WHERE id_atividade = :id_atividade
+                    AND id_usuario = :id_usuario";
+
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([
+                ':id_atividade' => $id_atividade,
+                ':id_usuario' => $id_usuario
+            ]);
+
+            if (!$stmt->fetchColumn()) {
+                throw new Exception('Atividade não encontrada.');
+            }
+
+            // Validar e separar data e horário
+            $dataObjeto = DateTimeImmutable::createFromFormat(
+                '!Y-m-d\TH:i',
+                $data_hora
+            );
+
+            if (
+                !$dataObjeto ||
+                $dataObjeto->format('Y-m-d\TH:i') !== $data_hora
+            ) {
+                throw new Exception('Data ou horário inválido.');
+            }
+
+            $data = $dataObjeto->format('Y-m-d');
+            $horario = $dataObjeto->format('H:i:s');
+
+            // Cadastrar lembrete
+            $sql = "INSERT INTO lembrete
+                        (id_atividade, data, horario, mensagem, status)
+                    VALUES
+                        (:id_atividade, :data, :horario, :mensagem, :status)";
+
+            $stmt = $pdo->prepare($sql);
+
+            $stmt->execute([
+                ':id_atividade' => $id_atividade,
+                ':data' => $data,
+                ':horario' => $horario,
+                ':mensagem' => $mensagem_lembrete !== ''
+                    ? $mensagem_lembrete
+                    : null,
+                ':status' => 'agendado'
+            ]);
+
+            registrarLog(
+                $pdo,
+                $id_usuario,
+                'Cadastro de lembrete',
+                'Cadastrou um lembrete para a atividade ' . $id_atividade
+            );
+
+            header('Location: notifications.php?cadastro=sucesso', true, 303);
+            exit;
+
+        } catch (Exception $e) {
+            $mensagem = 'Erro ao cadastrar: ' . $e->getMessage();
+            $tipo_mensagem = 'erro';
+        }
+    }
+}
+// Buscar lembretes do usuário
+$sql = "SELECT
+            l.*,
+            a.titulo AS titulo_atividade,
+            c.nome_categoria
+        FROM lembrete l
+        INNER JOIN atividade a
+            ON l.id_atividade = a.id_atividade
+        LEFT JOIN categoria_atividade c
+            ON a.id_categoria = c.id_categoria
+        WHERE a.id_usuario = :id_usuario
+        ORDER BY l.data ASC, l.horario ASC";
+
+$stmt = $pdo->prepare($sql);
+$stmt->execute([
+    ':id_usuario' => $id_usuario
+]);
+
+$lembretes = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+$lembretesAgendados = array_filter(
+    $lembretes,
+    fn($l) => strtolower($l['status'] ?? '') === 'agendado'
+);
+
+$lembretesEnviados = array_filter(
+    $lembretes,
+    fn($l) => strtolower($l['status'] ?? '') === 'enviado'
+);
+
+$totalLembretes = count($lembretes);
+$totalAgendados = count($lembretesAgendados);
+$totalEnviados = count($lembretesEnviados);
+
+
+function formatarDataLembrete($data, $horario) {
+    if (empty($data) || empty($horario)) {
+        return 'Não informado';
+    }
+
+    return date('d/m/Y \à\s H:i', strtotime($data . ' ' . $horario));
+}
+
+
+
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST' &&
+    ($_POST['acao_lembrete'] ?? '') === 'excluir'
+) {
+    $id_lembrete = filter_var(
+        $_POST['id_lembrete'] ?? null,
+        FILTER_VALIDATE_INT
+    );
+
+    if (!$id_lembrete) {
+        die('Lembrete inválido.');
+    }
+
+    try {
+        // Buscar o lembrete e verificar se pertence ao usuário
+        $sql = "SELECT l.id_lembrete, a.titulo
+                FROM lembrete l
+                INNER JOIN atividade a
+                    ON l.id_atividade = a.id_atividade
+                WHERE l.id_lembrete = :id_lembrete
+                AND a.id_usuario = :id_usuario";
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([
+            ':id_lembrete' => $id_lembrete,
+            ':id_usuario' => $id_usuario
+        ]);
+
+        $lembrete = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$lembrete) {
+            throw new Exception('Lembrete não encontrado.');
+        }
+
+        // Excluir o lembrete pertencente ao usuário
+        $sql = "DELETE l FROM lembrete l
+                INNER JOIN atividade a
+                    ON l.id_atividade = a.id_atividade
+                WHERE l.id_lembrete = :id_lembrete
+                AND a.id_usuario = :id_usuario";
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([
+            ':id_lembrete' => $id_lembrete,
+            ':id_usuario' => $id_usuario
+        ]);
+
+        registrarLog(
+            $pdo,
+            $id_usuario,
+            'Exclusão de lembrete',
+            'Excluiu um lembrete da atividade: ' . $lembrete['titulo']
+        );
+
+        header('Location: notifications.php?acao=excluir', true, 303);
+        exit;
+
+    } catch (Exception $e) {
+        die('Erro ao excluir lembrete: ' .
+            htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8'));
+    }
+}
+
+
+?>
+
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -19,6 +248,8 @@
     <link rel="stylesheet" href="styles/notification.css">
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script src="scripts/notifications.js" defer></script>
 </head>
 
 <body>
@@ -83,7 +314,7 @@
 
                 <div>
                     <span>Total</span>
-                    <strong>4</strong>
+                    <strong><?= $totalLembretes ?></strong>
                 </div>
             </article>
 
@@ -94,7 +325,7 @@
 
                 <div>
                     <span>Agendados</span>
-                    <strong>3</strong>
+                    <strong><?= $totalAgendados ?></strong>
                 </div>
             </article>
 
@@ -105,7 +336,7 @@
 
                 <div>
                     <span>Enviados</span>
-                    <strong>1</strong>
+                    <strong><?= $totalEnviados ?></strong>
                 </div>
             </article>
 
@@ -132,41 +363,31 @@
 
                 <!-- DIV EM VEZ DE FORM:
                      impede qualquer envio de informações -->
-                <div class="reminder-form">
+               <form class="reminder-form" method="POST" action="">
 
                     <div class="reminder-form-grid">
 
-                        <div class="form-field full-field">
-                            <label for="reminderActivity">
-                                Atividade relacionada
-                            </label>
+                        
+<div class="form-field full-field">
+    <label for="reminderActivity">
+        Atividade relacionada
+    </label>
 
-                            <select id="reminderActivity">
-                                <option selected>
-                                    Selecione uma atividade
-                                </option>
+    <select id="reminderActivity" name="id_atividade" required>
+        <option value="" selected>Selecione uma atividade</option>
 
-                                <option>
-                                    Tomar medicamento da manhã
-                                </option>
+        <?php foreach ($atividades as $atividade): ?>
+            <option value="<?= (int) $atividade['id_atividade'] ?>">
+                <?= htmlspecialchars($atividade['titulo'], ENT_QUOTES, 'UTF-8') ?>
+            </option>
+        <?php endforeach; ?>
 
-                                <option>
-                                    Organizar documentos pessoais
-                                </option>
+    </select>
 
-                                <option>
-                                    Consulta médica
-                                </option>
-
-                                <option>
-                                    Guardar as compras
-                                </option>
-                            </select>
-
-                            <small class="field-help">
-                                Somente atividades cadastradas serão apresentadas.
-                            </small>
-                        </div>
+    <small class="field-help">
+        Somente atividades cadastradas serão apresentadas.
+    </small>
+</div>
 
                         <div class="form-field full-field">
                             <label for="reminderMessage">
@@ -176,7 +397,9 @@
 
                             <textarea
                                 id="reminderMessage"
+                                name="mensagem"
                                 rows="3"
+                                maxlength="500"
                                 placeholder="Ex.: Separar o medicamento antes do café da manhã"
                             ></textarea>
                         </div>
@@ -189,7 +412,9 @@
                             <input
                                 type="datetime-local"
                                 id="reminderDateTime"
+                                name="data_hora_lembrete"
                                 step="60"
+                                required
                             >
                         </div>
 
@@ -240,19 +465,21 @@
                     </div>
 
                     <button
-                        type="button"
+                        type="submit"
                         class="save-reminder-btn"
                     >
                         <i class="fas fa-bell"></i>
                         Cadastrar lembrete
                     </button>
 
-                    <p class="backend-message">
-                        O cadastro será disponibilizado após a integração
-                        com o banco de dados.
-                    </p>
+                    <?php if ($mensagem !== ''): ?>
+    <p class="backend-message <?= $tipo_mensagem ?>">
+        <?= htmlspecialchars($mensagem, ENT_QUOTES, 'UTF-8') ?>
+    </p>
+<?php endif; ?>
 
                 </div>
+               </form>
             </article>
 
             <!-- VISUALIZAÇÃO DOS LEMBRETES -->
@@ -287,294 +514,164 @@
                     </div>
 
                     <select id="reminderStatusFilter">
-                        <option selected>Todos os status</option>
-                        <option>Agendados</option>
-                        <option>Enviados</option>
+                        <option value="todos" selected>Todos os status</option>
+                        <option value="agendado">Agendados</option>
+                        <option value="enviado">Enviados</option>
                     </select>
 
                 </div>
 
-                <div class="reminder-columns">
-
-                    <!-- LEMBRETES AGENDADOS -->
-                    <section class="reminder-panel">
-
-                        <div class="panel-heading">
-                            <div>
-                                <span class="status-dot scheduled-dot"></span>
-                                <h3>Próximos lembretes</h3>
-                            </div>
-
-                            <span class="panel-count">3</span>
-                        </div>
-
-                        <div class="reminder-list">
-
-                            <article class="reminder-item">
-
-                                <div class="reminder-item-top">
-                                    <span class="reminder-status scheduled-status">
-                                        <i class="fas fa-clock"></i>
-                                        Agendado
-                                    </span>
-
-                                    <span class="reminder-date">
-                                        Hoje
-                                    </span>
-                                </div>
-
-                                <h4>Tomar medicamento da manhã</h4>
-
-                                <p class="reminder-observation">
-                                    Separar o medicamento antes do café da manhã.
-                                </p>
-
-                                <div class="reminder-information">
-
-                                    <div>
-                                        <i class="fas fa-bell"></i>
-
-                                        <span>
-                                            <small>Lembrar em</small>
-                                            <strong>14/09/2026 às 07:50</strong>
-                                        </span>
-                                    </div>
-
-                                    <div>
-                                        <i class="fas fa-pills"></i>
-
-                                        <span>
-                                            <small>Atividade</small>
-                                            <strong>Medicamento</strong>
-                                        </span>
-                                    </div>
-
-                                </div>
-
-                                <div class="reminder-actions">
-                                    <button
-                                        type="button"
-                                        class="secondary-action-btn"
-                                    >
-                                        <i class="fas fa-pen"></i>
-                                        Editar
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        class="danger-action-btn"
-                                    >
-                                        <i class="fas fa-xmark"></i>
-                                        Cancelar
-                                    </button>
-                                </div>
-
-                            </article>
-
-                            <article class="reminder-item">
-
-                                <div class="reminder-item-top">
-                                    <span class="reminder-status scheduled-status">
-                                        <i class="fas fa-clock"></i>
-                                        Agendado
-                                    </span>
-
-                                    <span class="reminder-date">
-                                        Amanhã
-                                    </span>
-                                </div>
-
-                                <h4>Consulta médica</h4>
-
-                                <p class="reminder-observation">
-                                    Separar documentos e resultados dos exames.
-                                </p>
-
-                                <div class="reminder-information">
-
-                                    <div>
-                                        <i class="fas fa-bell"></i>
-
-                                        <span>
-                                            <small>Lembrar em</small>
-                                            <strong>15/09/2026 às 07:30</strong>
-                                        </span>
-                                    </div>
-
-                                    <div>
-                                        <i class="fas fa-calendar-check"></i>
-
-                                        <span>
-                                            <small>Atividade</small>
-                                            <strong>Compromisso</strong>
-                                        </span>
-                                    </div>
-
-                                </div>
-
-                                <div class="reminder-actions">
-                                    <button
-                                        type="button"
-                                        class="secondary-action-btn"
-                                    >
-                                        <i class="fas fa-pen"></i>
-                                        Editar
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        class="danger-action-btn"
-                                    >
-                                        <i class="fas fa-xmark"></i>
-                                        Cancelar
-                                    </button>
-                                </div>
-
-                            </article>
-
-                            <article class="reminder-item">
-
-                                <div class="reminder-item-top">
-                                    <span class="reminder-status scheduled-status">
-                                        <i class="fas fa-clock"></i>
-                                        Agendado
-                                    </span>
-
-                                    <span class="reminder-date">
-                                        Amanhã
-                                    </span>
-                                </div>
-
-                                <h4>Organizar documentos pessoais</h4>
-
-                                <p class="reminder-observation">
-                                    Começar a organização antes do compromisso.
-                                </p>
-
-                                <div class="reminder-information">
-
-                                    <div>
-                                        <i class="fas fa-bell"></i>
-
-                                        <span>
-                                            <small>Lembrar em</small>
-                                            <strong>15/09/2026 às 13:30</strong>
-                                        </span>
-                                    </div>
-
-                                    <div>
-                                        <i class="fas fa-house"></i>
-
-                                        <span>
-                                            <small>Atividade</small>
-                                            <strong>Tarefa doméstica</strong>
-                                        </span>
-                                    </div>
-
-                                </div>
-
-                                <div class="reminder-actions">
-                                    <button
-                                        type="button"
-                                        class="secondary-action-btn"
-                                    >
-                                        <i class="fas fa-pen"></i>
-                                        Editar
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        class="danger-action-btn"
-                                    >
-                                        <i class="fas fa-xmark"></i>
-                                        Cancelar
-                                    </button>
-                                </div>
-
-                            </article>
-
-                        </div>
-                    </section>
-
-                    <!-- LEMBRETES ENVIADOS -->
-                    <section class="reminder-panel">
-
-                        <div class="panel-heading">
-                            <div>
-                                <span class="status-dot sent-dot"></span>
-                                <h3>Lembretes enviados</h3>
-                            </div>
-
-                            <span class="panel-count">1</span>
-                        </div>
-
-                        <div class="reminder-list">
-
-                            <article class="reminder-item is-sent">
-
-                                <div class="reminder-item-top">
-                                    <span class="reminder-status sent-status">
-                                        <i class="fas fa-circle-check"></i>
-                                        Enviado
-                                    </span>
-
-                                    <span class="reminder-date">
-                                        12/09
-                                    </span>
-                                </div>
-
-                                <h4>Guardar as compras</h4>
-
-                                <p class="reminder-observation">
-                                    Organizar os produtos nos armários.
-                                </p>
-
-                                <div class="reminder-information">
-
-                                    <div>
-                                        <i class="fas fa-bell"></i>
-
-                                        <span>
-                                            <small>Enviado em</small>
-                                            <strong>12/09/2026 às 16:45</strong>
-                                        </span>
-                                    </div>
-
-                                    <div>
-                                        <i class="fas fa-house"></i>
-
-                                        <span>
-                                            <small>Atividade</small>
-                                            <strong>Tarefa doméstica</strong>
-                                        </span>
-                                    </div>
-
-                                </div>
-
-                                <div class="reminder-actions">
-                                    <button
-                                        type="button"
-                                        class="secondary-action-btn"
-                                    >
-                                        <i class="fas fa-rotate-left"></i>
-                                        Reagendar
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        class="danger-action-btn"
-                                    >
-                                        <i class="fas fa-trash"></i>
-                                        Excluir
-                                    </button>
-                                </div>
-
-                            </article>
-
-                        </div>
-                    </section>
-
+             
+<div class="reminder-columns">
+
+    <?php
+    $paineis = [
+        [
+            'titulo' => 'Próximos lembretes',
+            'lembretes' => $lembretesAgendados,
+            'classe' => 'scheduled',
+            'status' => 'Agendado',
+            'icone' => 'fa-clock'
+        ],
+        [
+            'titulo' => 'Lembretes enviados',
+            'lembretes' => $lembretesEnviados,
+            'classe' => 'sent',
+            'status' => 'Enviado',
+            'icone' => 'fa-circle-check'
+        ]
+    ];
+    ?>
+
+    <?php foreach ($paineis as $painel): ?>
+
+        <section class="reminder-panel">
+
+            <div class="panel-heading">
+                <div>
+                    <span class="status-dot <?= $painel['classe'] ?>-dot"></span>
+                    <h3><?= htmlspecialchars($painel['titulo']) ?></h3>
                 </div>
+
+                <span class="panel-count">
+                    <?= count($painel['lembretes']) ?>
+                </span>
+            </div>
+
+            <div class="reminder-list">
+
+                <?php if (empty($painel['lembretes'])): ?>
+
+                    <p>Nenhum lembrete encontrado.</p>
+
+                <?php else: ?>
+
+                    <?php foreach ($painel['lembretes'] as $lembrete): ?>
+
+                        <article class="reminder-item <?= $painel['classe'] === 'sent' ? 'is-sent' : '' ?>"
+                        data-status="<?= htmlspecialchars($lembrete['status'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                           
+
+                        <form method="POST"
+                              action="notifications.php"
+                              class="delete-reminder-form"
+                              onsubmit="return confirm('Deseja realmente excluir este lembrete?');">
+                                            
+                            <input type="hidden"
+                                   name="id_lembrete"
+                                   value="<?= (int) $lembrete['id_lembrete'] ?>">
+                                            
+                            <button type="submit"
+                                    name="acao_lembrete"
+                                    value="excluir"
+                                    class="delete-reminder-btn"
+                                    title="Excluir lembrete"
+                                    aria-label="Excluir lembrete">
+                                            
+                                <i class="fas fa-xmark"></i>
+                                            
+                            </button>
+                        </form>
+
+
+                        <div class="reminder-item-top">
+
+                                <span class="reminder-status <?= $painel['classe'] ?>-status">
+                                    <i class="fas <?= $painel['icone'] ?>"></i>
+                                    <?= $painel['status'] ?>
+                                </span>
+
+                                <span class="reminder-date">
+                                    <?= !empty($lembrete['data'])
+                                        ? date('d/m', strtotime($lembrete['data']))
+                                        : '--/--' ?>
+                                </span>
+
+                            </div>
+
+                            <h4>
+                                <?= htmlspecialchars($lembrete['titulo_atividade'] ?? '', ENT_QUOTES, 'UTF-8') ?>
+                            </h4>
+
+                            <p class="reminder-observation">
+                                <?= htmlspecialchars($lembrete['mensagem'] ?: 'Sem observação', ENT_QUOTES, 'UTF-8') ?>
+                            </p>
+
+                            <div class="reminder-information">
+
+                                <div>
+                                    <i class="fas fa-bell"></i>
+
+                                    <span>
+                                        <small>
+                                            <?= $painel['classe'] === 'sent'
+                                                ? 'Horário programado'
+                                                : 'Lembrar em' ?>
+                                        </small>
+
+                                        <strong>
+                                            <?= formatarDataLembrete(
+                                                $lembrete['data'],
+                                                $lembrete['horario']
+                                            ) ?>
+                                        </strong>
+                                    </span>
+                                </div>
+
+                                <div>
+                                    <i class="fas fa-bookmark"></i>
+
+                                    <span>
+                                        <small>Atividade</small>
+
+                                        <strong>
+                                            <?= htmlspecialchars(
+                                                $lembrete['nome_categoria'] ?? 'Outro',
+                                                ENT_QUOTES,
+                                                'UTF-8'
+                                            ) ?>
+                                        </strong>
+                                    </span>
+                                </div>
+
+                            </div>
+
+                            <!-- Funcionalidades futuras -->
+                            
+
+                        </article>
+
+                    <?php endforeach; ?>
+
+                <?php endif; ?>
+
+            </div>
+        </section>
+
+    <?php endforeach; ?>
+
+</div>
+
             </article>
 
         </section>

@@ -344,16 +344,7 @@ function formatarData($data) {
         </div>
 
     </div>
-<!--
-    <button
-        type="button"
-        class="new-activity-btn"
-        aria-disabled="true"
-    >
-        <i class="fas fa-plus"></i>
-        Nova atividade
-    </button>
--->
+
 </section>
 
     <!-- RESUMO DINÂMICO -->
@@ -374,7 +365,7 @@ function formatarData($data) {
 
         <section class="activities-workspace">
 
-            <!-- FORMULÁRIO APENAS VISUAL -->
+            <!-- FORMULÁRIO  -->
            
             <article class="activity-form-card">
 
@@ -487,7 +478,7 @@ function formatarData($data) {
 
             </article>
 
-            <!-- ATIVIDADES FICTÍCIAS E ESTÁTICAS -->
+            <!-- ATIVIDADES  -->
             <article class="activities-list-card">
 
                 <div class="card-heading list-heading">
@@ -503,7 +494,7 @@ function formatarData($data) {
                     </div>
                 </div>
 
-                <!-- FILTROS APENAS VISUAIS -->
+                <!-- FILTROS -->
                 <div class="filter-toolbar">
 
                 <div class="search-field">
