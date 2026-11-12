@@ -290,6 +290,8 @@ function formatarData($data) {
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
    <script src="scripts/activities.js" defer></script>
+<link rel="stylesheet" href="styles/check_notifications.css">
+   <script src="scripts/check_notifications.js" defer></script>
 </head>
 
 <body>
@@ -344,16 +346,7 @@ function formatarData($data) {
         </div>
 
     </div>
-<!--
-    <button
-        type="button"
-        class="new-activity-btn"
-        aria-disabled="true"
-    >
-        <i class="fas fa-plus"></i>
-        Nova atividade
-    </button>
--->
+
 </section>
 
     <!-- RESUMO DINÂMICO -->
@@ -374,7 +367,7 @@ function formatarData($data) {
 
         <section class="activities-workspace">
 
-            <!-- FORMULÁRIO APENAS VISUAL -->
+            <!-- FORMULÁRIO  -->
            
             <article class="activity-form-card">
 
@@ -487,7 +480,7 @@ function formatarData($data) {
 
             </article>
 
-            <!-- ATIVIDADES FICTÍCIAS E ESTÁTICAS -->
+            <!-- ATIVIDADES  -->
             <article class="activities-list-card">
 
                 <div class="card-heading list-heading">
@@ -503,7 +496,7 @@ function formatarData($data) {
                     </div>
                 </div>
 
-                <!-- FILTROS APENAS VISUAIS -->
+                <!-- FILTROS -->
                 <div class="filter-toolbar">
 
                 <div class="search-field">
