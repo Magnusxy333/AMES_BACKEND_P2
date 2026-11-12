@@ -1,7 +1,7 @@
 <?php
 
 include_once 'conexao.php';
-
+require_once 'geocoding.php';
 // ID do usuário logado 
 // mudar para $_SESSION['id_usuario'])
 $id_usuario = 0; 
@@ -9,7 +9,7 @@ $id_usuario = 0;
 
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao_atividade'])) {
-
+    
     $acao = $_POST['acao_atividade'];
     $id_atividade = filter_var(
         $_POST['id_atividade'] ?? null,
@@ -89,6 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao_atividade'])) {
         header('Location: activities.php?acao=' . $acao, true, 303);
         exit;
 
+
     } catch (Exception $e) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
@@ -97,7 +98,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao_atividade'])) {
         die('Erro ao processar atividade: ' . htmlspecialchars($e->getMessage()));
     }
 }
-
 
 $mensagem = '';
 $tipo_mensagem  = '';
@@ -132,6 +132,11 @@ if (
     $data_inicio = $_POST['data_hora_inicio'] ?? '';
     $data_fim = $_POST['data_hora_fim'] ?? '';
    
+    $endereco = trim($_POST['endereco'] ?? '');
+
+    $latitude = null;
+    $longitude = null;
+
     if ($titulo === '' || $categoria === '') {
     $mensagem = 'Preencha o título e selecione uma categoria.';
     $tipo_mensagem = 'erro';
@@ -163,6 +168,26 @@ if (
         ? str_replace('T', ' ', $data_fim)
         : null;
 
+
+    if (mb_strlen($endereco) > 255) {
+    throw new Exception('O endereço deve ter no máximo 255 caracteres.');
+}
+
+    if ($endereco !== '') {
+
+    if (!function_exists('curl_init')) {
+        throw new Exception('A extensão cURL não está habilitada no PHP.');
+    }
+
+    $coordenadas = buscarCoordenadas($endereco);
+
+    if ($coordenadas === null) {
+        throw new Exception('Endereço não encontrado.');
+    }
+
+    $latitude = $coordenadas['latitude'];
+    $longitude = $coordenadas['longitude'];
+}
     // Validar a ordem das datas
     if ($data_inicio !== null && $data_fim !== null
         && strtotime($data_fim) < strtotime($data_inicio)) {
@@ -174,10 +199,10 @@ if (
     // Cadastrar atividade
     $sql = "INSERT INTO atividade
                 (id_usuario, id_categoria, titulo, descricao,
-                 data_hora_inicio, data_hora_fim, status)
+                 data_hora_inicio, data_hora_fim, status,endereco, latitude, longitude)
             VALUES
                 (:id_usuario, :id_categoria, :titulo, :descricao,
-                 :data_inicio, :data_fim, :status)";
+                 :data_inicio, :data_fim, :status, :endereco, :latitude, :longitude)";
 
     $stmt = $pdo->prepare($sql);
 
@@ -188,7 +213,10 @@ if (
         ':descricao' => $descricao !== '' ? $descricao : null,
         ':data_inicio' => $data_inicio,
         ':data_fim' => $data_fim,
-        ':status' => 'pendente'
+        ':status' => 'pendente',
+        ':endereco' => $endereco !== '' ? $endereco : null,
+        ':latitude' => $latitude ?? null,
+        ':longitude' => $longitude ?? null
     ]);
 
     // Registrar a ação no histórico
@@ -456,7 +484,20 @@ function formatarData($data) {
         step="60"
     >
 </div>
-
+<div class="form-field full-field">
+    <label for="endereco">Localização</label>
+    <input
+        type="text"
+        id="endereco"
+        name = "endereco"
+        placeholder="Ex.: Rua das Flores, 123"
+        maxlength="255"
+    >
+     <small class="text-muted">
+        Informe o endereço para gerar a latitude e longitude.
+    </small>
+</div>
+<br>
 </div>
 
 <?php if ($mensagem !== ''): ?>
