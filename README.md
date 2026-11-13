@@ -24,4 +24,4 @@ Para rodar este projeto localmente, você precisará de:
 
 1. **Clone o repositório:**
    ```bash
-   git clone [https://github.com/SeuUsuario/AMES_BACKEND_P2.git](https://github.com/SeuUsuario/AMES_BACKEND_P2.git)
+   git clone https://github.com/SeuUsuario/AMES_BACKEND_P2.git
