@@ -1,6 +1,106 @@
 <?php
+session_start(); // INICIA A SESSÃO AQUI
 include_once 'conexao.php';
-$id_usuario = 0; // Substitua pelo ID do usuário logado
+
+// Importa as classes do PHPMailer criadas pelo Composer
+require 'vendor/autoload.php';
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
+
+// Verifica se o usuário está logado
+if (!isset($_SESSION['id_usuario'])) {
+    echo "<script>alert('Você precisa estar logado para acessar esta página.'); window.location.href='index.php';</script>";
+    exit;
+}
+
+// Pega o ID real do usuário logado na sessão
+$id_usuario = $_SESSION['id_usuario'];
+
+// --- SISTEMA DE ENVIO REAL DE E-MAILS DE LEMBRETES ---
+// Pega a data e hora atual do servidor
+$data_atual_servidor = date('Y-m-d');
+$hora_atual_servidor = date('H:i:s');
+
+try {
+    // Busca os lembretes agendados que já deram a hora, trazendo junto o email do usuário
+    $sql_busca = "
+        SELECT l.id_lembrete, l.mensagem, a.titulo, u.nome, u.email
+        FROM lembrete l
+        INNER JOIN atividade a ON l.id_atividade = a.id_atividade
+        INNER JOIN usuario u ON a.id_usuario = u.id_usuario
+        WHERE a.id_usuario = :id_usuario 
+        AND l.status = 'agendado'
+        AND (
+            l.data < :data_atual 
+            OR (l.data = :data_atual AND l.horario <= :hora_atual)
+        )
+    ";
+    
+    $stmt_busca = $pdo->prepare($sql_busca);
+    $stmt_busca->execute([
+        ':id_usuario' => $id_usuario,
+        ':data_atual' => $data_atual_servidor,
+        ':hora_atual' => $hora_atual_servidor
+    ]);
+
+    $lembretes_vencidos = $stmt_busca->fetchAll(PDO::FETCH_ASSOC);
+
+    if (count($lembretes_vencidos) > 0) {
+        $mail = new PHPMailer(true);
+        
+        try {
+            $mail->isSMTP();
+            $mail->Host       = 'smtp.gmail.com';
+            $mail->SMTPAuth   = true;
+            
+            // INSIRA SEUS DADOS AQUI:
+            $mail->Username   = 'SEU_EMAIL'; 
+            $mail->Password   = 'SUA_SENHA_DE_APP_AQUI'; 
+            
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+            $mail->Port       = 587;
+            $mail->CharSet    = 'UTF-8';
+
+            $mail->setFrom('SEU_EMAIL', 'Sistema AMES');
+
+            // Percorre todos os lembretes que passaram da hora
+            foreach ($lembretes_vencidos as $lembrete) {
+                // Limpa os destinatários do loop anterior
+                $mail->clearAddresses();
+                
+                // Configura o destinatário (Email do usuário cadastrado no sistema)
+                $mail->addAddress($lembrete['email'], $lembrete['nome']);
+
+                // Conteúdo do E-mail
+                $mail->isHTML(true);
+                $mail->Subject = 'Lembrete AMES: ' . $lembrete['titulo'];
+                
+                $observacao = $lembrete['mensagem'] ? "<p><strong>Observação:</strong> {$lembrete['mensagem']}</p>" : "";
+                
+                $mail->Body = "
+                    <h2>Olá, {$lembrete['nome']}!</h2>
+                    <p>Este é o seu lembrete para a atividade: <strong>{$lembrete['titulo']}</strong>.</p>
+                    {$observacao}
+                    <hr>
+                    <p><small>Enviado automaticamente pelo Sistema AMES.</small></p>
+                ";
+
+                // Tenta enviar o email
+                if ($mail->send()) {
+                    // Atualiza o status no banco para 'enviado' após sucesso no envio
+                    $sql_atualiza = "UPDATE lembrete SET status = 'enviado' WHERE id_lembrete = :id_lembrete";
+                    $stmt_atualiza = $pdo->prepare($sql_atualiza);
+                    $stmt_atualiza->execute([':id_lembrete' => $lembrete['id_lembrete']]);
+                }
+            }
+        } catch (Exception $e) {
+            error_log("Erro de configuração do PHPMailer: {$mail->ErrorInfo}");
+        }
+    }
+} catch (PDOException $e) {
+    error_log("Erro no banco de dados ao verificar lembretes: " . $e->getMessage());
+}
+// ------------------------------------------------------
 
 
 $sql = "SELECT id_atividade, titulo
@@ -100,12 +200,15 @@ if (
                 ':status' => 'agendado'
             ]);
 
-            registrarLog(
-                $pdo,
-                $id_usuario,
-                'Cadastro de lembrete',
-                'Cadastrou um lembrete para a atividade ' . $id_atividade
-            );
+            // Validação de existência da função log
+            if (function_exists('registrarLog')) {
+                registrarLog(
+                    $pdo,
+                    $id_usuario,
+                    'Cadastro de lembrete',
+                    'Cadastrou um lembrete para a atividade ' . $id_atividade
+                );
+            }
 
             header('Location: notifications.php?cadastro=sucesso', true, 303);
             exit;
@@ -208,12 +311,15 @@ if (
             ':id_usuario' => $id_usuario
         ]);
 
-        registrarLog(
-            $pdo,
-            $id_usuario,
-            'Exclusão de lembrete',
-            'Excluiu um lembrete da atividade: ' . $lembrete['titulo']
-        );
+        // Validação de existência da função log
+        if (function_exists('registrarLog')) {
+            registrarLog(
+                $pdo,
+                $id_usuario,
+                'Exclusão de lembrete',
+                'Excluiu um lembrete da atividade: ' . $lembrete['titulo']
+            );
+        }
 
         header('Location: notifications.php?acao=excluir', true, 303);
         exit;
@@ -363,8 +469,6 @@ if (
                     </div>
                 </div>
 
-                <!-- DIV EM VEZ DE FORM:
-                     impede qualquer envio de informações -->
                <form class="reminder-form" method="POST" action="">
 
                     <div class="reminder-form-grid">
@@ -419,25 +523,7 @@ if (
                                 required
                             >
                         </div>
-<!---
-                        <div class="form-field">
-                            <label for="reminderAdvance">
-                                Antecedência
-                            </label>
 
-                            <select id="reminderAdvance">
-                                <option selected>
-                                    No horário escolhido
-                                </option>
-
-                                <option>5 minutos antes</option>
-                                <option>15 minutos antes</option>
-                                <option>30 minutos antes</option>
-                                <option>1 hora antes</option>
-                                <option>1 dia antes</option>
-                            </select>
-                        </div>
---->
                         <div class="form-field full-field">
                             <label for="reminderChannel">
                                 Forma de aviso
@@ -657,9 +743,6 @@ if (
                                 </div>
 
                             </div>
-
-                            <!-- Funcionalidades futuras -->
-                            
 
                         </article>
 

@@ -1,0 +1,6 @@
+# Ignora a pasta de dependências do Composer
+/vendor/
+
+# Ignora arquivos de sistema operacional
+.DS_Store
+Thumbs.db

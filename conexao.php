@@ -1,6 +1,9 @@
 <?php
+// Define o fuso horário correto para garantir que o horário do log fique exato
+date_default_timezone_set('America/Sao_Paulo');
+
 $host = 'localhost';
-$dbname = 'ames_db';
+$dbname = 'ames3'; // Confirme se o banco é 'ames3' ou 'ames_db'
 $username = 'root'; // Usuário padrão do XAMPP
 $password = '';     // Senha padrão do XAMPP geralmente é vazia
 
@@ -18,7 +21,7 @@ try {
 // Função responsável por gravar ações na tabela log_usuario
 function registrarLog($pdo, $id_usuario, $acao, $descricao) {
     try {
-        // Pega a data e hora exatas do momento da ação no fuso horário do servidor
+        // Pega a data e hora exatas do momento da ação
         $data_atual = date('Y-m-d');
         $horario_atual = date('H:i:s');
 
@@ -37,7 +40,14 @@ function registrarLog($pdo, $id_usuario, $acao, $descricao) {
         
         return true;
     } catch (PDOException $e) {
-        // Em caso de falha no log, apenas retorna falso para não quebrar a tela do usuário
+        // GRAVA O ERRO NO CONSOLE/LOG DO PHP SEM QUEBRAR A TELA
+        // Dessa forma você consegue ver o motivo de não estar funcionando
+        error_log("ERRO NO registrarLog: " . $e->getMessage());
+        
+        // Se quiser ver o erro direto na tela TEMPORARIAMENTE para descobrir o problema, 
+        // descomente a linha abaixo, faça uma ação no sistema e veja a mensagem que aparece:
+        // echo "<script>alert('Erro no log: " . $e->getMessage() . "');</script>";
+        
         return false; 
     }
 }

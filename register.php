@@ -4,7 +4,7 @@ require_once 'conexao.php';
 
 // Verifica se o formulário foi enviado
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['bt_incluir'])) {
-    // Coleta os dados do formulário
+    // Coleta os dados do formulário (SEM O USERNAME)
     $nome = $_POST['txt_nome'];
     $sobrenome = $_POST['txt_sobrenome'];
     $email = $_POST['txt_email'];
@@ -14,7 +14,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['bt_incluir'])) {
     $senha_hash = password_hash($senha_digitada, PASSWORD_DEFAULT);
     
     try {
-        // Prepara o INSERT na tabela usuario
+        // Prepara o INSERT na tabela usuario de acordo com as colunas reais do banco
         $sql = "INSERT INTO usuario (nome, sobrenome, email, senha) VALUES (:nome, :sobrenome, :email, :senha)";
         $stmt = $pdo->prepare($sql);
         
@@ -29,7 +29,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['bt_incluir'])) {
             $id_novo_usuario = $pdo->lastInsertId();
             
             // REGISTRA O LOG DE CADASTRO
-            registrarLog($pdo, $id_novo_usuario, 'CADASTRO_NOVO', 'Usuário realizou o cadastro no sistema.');
+            if(function_exists('registrarLog')) {
+                registrarLog($pdo, $id_novo_usuario, 'CADASTRO_NOVO', 'Usuário realizou o cadastro no sistema.');
+            }
             
             // Exibe alerta e manda o usuário para a tela de login (index.php)
             echo "<script>alert('Cadastro realizado com sucesso!'); window.location.href='index.php';</script>";
@@ -60,22 +62,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['bt_incluir'])) {
           </div>
 
           <form class="form-content register-form" method="POST" action="" onsubmit="return validateForm();">
-            <div class="form-group">
-              <label for="username" class="form-label">
-                Usuário
-              </label>
-              <input
-                type="text"
-                id="username"
-                class="form-input"
-                placeholder="Digite seu username (3-50 caracteres)"
-                name="txt_username"
-                pattern="[A-Za-z0-9_]{3,50}"
-                title="Username deve conter apenas letras, números e underscore (3-50 caracteres)"
-                required
-              />
-              <small class="email-hint">Apenas letras, números e _ (underline)</small>
-            </div>
+            
+            <!-- CAMPO USUÁRIO (USERNAME) FOI REMOVIDO PARA ESTAR DE ACORDO COM O BANCO -->
 
             <div class="form-row">
               <div class="form-group1">
@@ -289,7 +277,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['bt_incluir'])) {
       
       // ===== VALIDAÇÃO DO FORMULÁRIO =====
       function validateForm() {
-        const username = document.getElementById('username').value;
         const nome = document.getElementById('nome').value;
         const sobrenome = document.getElementById('sobrenome').value;
         const email = document.getElementById('email').value;
@@ -302,15 +289,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['bt_incluir'])) {
           'live.com', 'msn.com'
         ];
         
-        if (username.length < 3 || username.length > 50) {
-          alert('O username deve ter entre 3 e 50 caracteres');
-          return false;
-        }
-        
-        if (!/^[A-Za-z0-9_]+$/.test(username)) {
-          alert('O username deve conter apenas letras, números e underscore (_)');
-          return false;
-        }
+        // VALIDAÇÕES DO USERNAME FORAM REMOVIDAS AQUI TAMBÉM
         
         if (!/^[A-Za-zÀ-ÿ\s]{2,100}$/.test(nome)) {
           alert('O nome deve conter apenas letras (2-100 caracteres)');

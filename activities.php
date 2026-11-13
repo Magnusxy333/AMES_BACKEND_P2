@@ -1,11 +1,16 @@
 <?php
-
+session_start(); // INICIA A SESSÃO AQUI
 include_once 'conexao.php';
 require_once 'geocoding.php';
-// ID do usuário logado 
-// mudar para $_SESSION['id_usuario'])
-$id_usuario = 0; 
 
+// Verifica se o usuário está logado
+if (!isset($_SESSION['id_usuario'])) {
+    echo "<script>alert('Você precisa estar logado para acessar esta página.'); window.location.href='index.php';</script>";
+    exit;
+}
+
+// Pega o ID real do usuário logado na sessão
+$id_usuario = $_SESSION['id_usuario'];
 
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao_atividade'])) {
@@ -79,12 +84,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao_atividade'])) {
 
         $pdo->commit();
 
-        registrarLog(
-            $pdo,
-            $id_usuario,
-            'Atividade: ' . $acao,
-            'Atividade: ' . $atividade['titulo']
-        );
+        if (function_exists('registrarLog')) {
+            registrarLog(
+                $pdo,
+                $id_usuario,
+                'Atividade: ' . $acao,
+                'Atividade: ' . $atividade['titulo']
+            );
+        }
 
         header('Location: activities.php?acao=' . $acao, true, 303);
         exit;
@@ -156,7 +163,7 @@ if (
     $id_categoria = $stmt_categoria->fetchColumn();
 
     if ($id_categoria === false) {
-        throw new Exception('Categoria não encontrada.');
+        throw new Exception('Categoria não encontrada no banco de dados. Certifique-se de que ela existe na tabela categoria_atividade.');
     }
 
     // Converter datas vazias para NULL
@@ -220,12 +227,14 @@ if (
     ]);
 
     // Registrar a ação no histórico
-    registrarLog(
-        $pdo,
-        $id_usuario,
-        'Cadastro de atividade',
-        'Cadastrou a atividade: ' . $titulo
-    );
+    if (function_exists('registrarLog')) {
+        registrarLog(
+            $pdo,
+            $id_usuario,
+            'Cadastro de atividade',
+            'Cadastrou a atividade: ' . $titulo
+        );
+    }
 
     header('Location: activities.php?cadastro=sucesso', true, 303);
     exit;
@@ -290,10 +299,6 @@ function formatarData($data) {
 
     return date('d/m/Y, H:i', strtotime($data));
 }
-
-
-
-
 
 ?>
 <!DOCTYPE html>
