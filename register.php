@@ -48,6 +48,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['bt_incluir'])) {
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>EMAS - Cadastro</title>
+    <link rel="icon" href="images/logotipoB-AMES.png">
     <link rel="stylesheet" href="styles/register.css" />
   </head>
   <body>
