@@ -2,6 +2,8 @@
 
 O **AMES** é uma aplicação web focada na organização diária. O sistema permite que os usuários se cadastrem, gerenciem suas rotinas (tarefas domésticas, medicamentos, compromissos, etc.) e configurem lembretes que disparam notificações por e-mail automaticamente.
 
+Link: https://ames.42web.io/?i=1
+
 ## 🚀 Funcionalidades
 
 - **Autenticação:** Cadastro e Login de usuários de forma isolada.
